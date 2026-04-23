@@ -19,4 +19,9 @@ export class CouponController {
   remove(@Headers('authorization') authorization = '', @Body() body: any) {
     return this.couponService.remove(authorization, body);
   }
+
+  @Post('grant')
+  grant(@Headers('authorization') authorization = '', @Body() body: any) {
+    return this.couponService.grant(authorization, body);
+  }
 }

@@ -7,9 +7,11 @@ import { CategoryModule } from './category/category.module';
 import { ProductModule } from './product/product.module';
 import { ShopModule } from './shop/shop.module';
 import { CouponModule } from './coupon/coupon.module';
+import { OrderModule } from './order/order.module';
+import { ServiceModule } from './service/service.module';
 
 @Module({
-  imports: [ConfigModule.forRoot({ isGlobal: true }), AuthModule, CategoryModule, ProductModule, ShopModule, CouponModule],
+  imports: [ConfigModule.forRoot({ isGlobal: true }), AuthModule, CategoryModule, ProductModule, ShopModule, CouponModule, OrderModule, ServiceModule],
   controllers: [AppController],
   providers: [AppService],
 })
