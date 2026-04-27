@@ -123,6 +123,15 @@ export class ProductService {
     ]));
   }
 
+  private uniqueImageUrls(urls: string[]) {
+    return Array.from(new Set(urls.map((item) => String(item || '').trim()).filter(Boolean)));
+  }
+
+  private imageUrlsToRemove(previousUrls: string[], nextUrls: string[]) {
+    const nextSet = new Set(this.uniqueImageUrls(nextUrls));
+    return this.uniqueImageUrls(previousUrls).filter((item) => !nextSet.has(item));
+  }
+
   private removeLocalProductImages(urls: string[]) {
     const uploadRoot = normalize(join(process.cwd(), 'uploads', 'product-images'));
     for (const url of urls) {
@@ -132,7 +141,12 @@ export class ProductService {
       if (!filename) continue;
       const filePath = normalize(join(uploadRoot, decodeURIComponent(filename)));
       if (!filePath.startsWith(uploadRoot)) continue;
-      if (existsSync(filePath)) unlinkSync(filePath);
+      if (!existsSync(filePath)) continue;
+      try {
+        unlinkSync(filePath);
+      } catch {
+        // Best-effort cleanup. Keep the business operation successful even if a file is locked.
+      }
     }
   }
 
@@ -344,6 +358,12 @@ export class ProductService {
     const originPrice = Math.max(0, Number(body.originPrice ?? minPrice));
 
     if (id > 0) {
+      const existingRows = await this.db.query<Pick<ProductRow, 'main_image_url' | 'detail_json'>>(
+        'SELECT main_image_url, detail_json FROM products WHERE id = ? AND deleted_at IS NULL LIMIT 1;',
+        [id],
+      );
+      const previousSkuRows = await this.getSkuRows(id);
+      const previousImageUrls = existingRows[0] ? this.imageUrlsFromRow(existingRows[0], previousSkuRows) : [];
       const result = await this.db.execute<ResultSetHeader>(
         `UPDATE products
          SET spu_code = ?, shop_id = ?, category_id = ?, name = ?, main_image_url = ?, min_price = ?, max_price = ?,
@@ -353,6 +373,12 @@ export class ProductService {
       );
       if (result.affectedRows === 0) throw new NotFoundException('商品不存在');
       await this.replaceSkuModel(id, skuPayloads);
+      const nextImageUrls = this.uniqueImageUrls([
+        ...imageUrls,
+        ...hdImageUrls,
+        ...skuPayloads.map((sku) => toStoredUploadValue(sku.imageUrl || '', 'product-images')).filter(Boolean) as string[],
+      ]);
+      this.removeLocalProductImages(this.imageUrlsToRemove(previousImageUrls, nextImageUrls));
       return { status: 200, message: '保存成功', result: { id } };
     }
 
