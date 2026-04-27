@@ -2,6 +2,7 @@ import { BadRequestException, Body, Controller, Get, Headers, Post, UploadedFile
 import { FileInterceptor } from '@nestjs/platform-express';
 import { existsSync, mkdirSync } from 'node:fs';
 import { extname, join } from 'node:path';
+import { toUploadPublicUrl } from '../common/upload-path.util';
 import { ProductService } from './product.service';
 
 const multer = require('multer');
@@ -43,6 +44,6 @@ export class ProductController {
     await this.productService.requireUser(authorization);
     if (!file) throw new BadRequestException('请上传图片文件');
     if (!String(file.mimetype || '').startsWith('image/')) throw new BadRequestException('请上传图片文件');
-    return { status: 200, message: '上传成功', result: { url: `/uploads/product-images/${file.filename}` } };
+    return { status: 200, message: '上传成功', result: { url: toUploadPublicUrl(file.filename, 'product-images') } };
   }
 }

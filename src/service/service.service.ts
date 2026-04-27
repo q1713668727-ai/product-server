@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { AuthService } from '../auth/auth.service';
+import { toUploadPublicUrl } from '../common/upload-path.util';
 import { DatabaseService } from '../database/database.service';
 
 type ServiceSessionRow = {
@@ -170,7 +171,7 @@ export class ServiceService {
       shopId: row.shop_id == null ? null : Number(row.shop_id),
       shop: row.shop_name || '店铺',
       product: row.product_name || '',
-      productImageUrl: row.product_image_url || '',
+      productImageUrl: toUploadPublicUrl(row.product_image_url || '', 'product-images'),
       productPrice: Number(row.product_price || 0),
       buyerOrderNo: row.buyer_order_no || '',
       buyerOrderStatus: this.buyerOrderStatusText(row.buyer_order_status_code, row.buyer_refund_status_code),

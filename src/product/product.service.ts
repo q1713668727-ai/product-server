@@ -1,8 +1,9 @@
 import { BadRequestException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { ResultSetHeader } from 'mysql2';
 import { existsSync, unlinkSync } from 'node:fs';
-import { basename, join, normalize } from 'node:path';
+import { join, normalize } from 'node:path';
 import { AuthService } from '../auth/auth.service';
+import { extractUploadFilename, toStoredUploadValue, toUploadPublicUrl } from '../common/upload-path.util';
 import { DatabaseService } from '../database/database.service';
 
 type ProductStatus = '上架' | '下架' | '售罄';
@@ -75,9 +76,18 @@ export class ProductService {
     return this.authService.getUserByToken(this.token(authorization));
   }
 
-  private normalizeImageUrls(value: any) {
+  private normalizeStoredImageUrls(value: any) {
     if (!Array.isArray(value)) return [];
-    return value.map((item) => String(item || '').trim()).filter((item) => item && !item.startsWith('blob:'));
+    return value
+      .map((item) => toStoredUploadValue(item, 'product-images'))
+      .filter((item) => item && !item.startsWith('blob:'));
+  }
+
+  private normalizePublicImageUrls(value: any) {
+    if (!Array.isArray(value)) return [];
+    return value
+      .map((item) => toUploadPublicUrl(item, 'product-images'))
+      .filter((item) => item && !item.startsWith('blob:'));
   }
 
   private normalizeSpecs(value: any) {
@@ -106,10 +116,10 @@ export class ProductService {
   private imageUrlsFromRow(row: Pick<ProductRow, 'main_image_url' | 'detail_json'>, skus: Array<{ image_url?: string | null }> = []) {
     const detail = this.parseDetail(row) as any;
     return Array.from(new Set([
-      ...this.normalizeImageUrls([row.main_image_url]),
-      ...this.normalizeImageUrls(detail.imageUrls),
-      ...this.normalizeImageUrls(detail.hdImageUrls),
-      ...this.normalizeImageUrls(skus.map((sku) => sku.image_url || '')),
+      ...this.normalizeStoredImageUrls([row.main_image_url]),
+      ...this.normalizeStoredImageUrls(detail.imageUrls),
+      ...this.normalizeStoredImageUrls(detail.hdImageUrls),
+      ...this.normalizeStoredImageUrls(skus.map((sku) => sku.image_url || '')),
     ]));
   }
 
@@ -118,8 +128,7 @@ export class ProductService {
     for (const url of urls) {
       const raw = String(url || '').trim();
       if (!raw) continue;
-      const match = raw.match(/\/uploads\/product-images\/([^/?#]+)/);
-      const filename = match?.[1] || basename(raw.split('?')[0].split('#')[0]);
+      const filename = extractUploadFilename(raw, 'product-images');
       if (!filename) continue;
       const filePath = normalize(join(uploadRoot, decodeURIComponent(filename)));
       if (!filePath.startsWith(uploadRoot)) continue;
@@ -136,8 +145,8 @@ export class ProductService {
 
   private mapRow(row: ProductRow, skuRows: Awaited<ReturnType<ProductService['getSkuRows']>> = []) {
     const detail = this.parseDetail(row) as any;
-    const mainImageUrl = String(row.main_image_url || '').trim();
-    const imageUrls = this.normalizeImageUrls(detail.imageUrls);
+    const mainImageUrl = toUploadPublicUrl(row.main_image_url || '', 'product-images');
+    const imageUrls = this.normalizePublicImageUrls(detail.imageUrls);
     if (mainImageUrl && !mainImageUrl.startsWith('blob:') && !imageUrls.includes(mainImageUrl)) imageUrls.unshift(mainImageUrl);
     const skus = skuRows.map((sku) => {
       let specs: Array<{ name: string; value: string }> = [];
@@ -152,7 +161,7 @@ export class ProductService {
         price: Number(sku.price || 0),
         originPrice: Number(sku.origin_price || sku.price || 0),
         stock: Number(sku.stock || 0),
-        imageUrl: sku.image_url || '',
+        imageUrl: toUploadPublicUrl(sku.image_url || '', 'product-images'),
         specs,
         status: this.statusText(Number(sku.status || 0)),
       };
@@ -176,7 +185,7 @@ export class ProductService {
       freeShipping: row.is_free_shipping === 1,
       imageUrl: imageUrls[0] || '',
       imageUrls,
-      hdImageUrls: this.normalizeImageUrls(detail.hdImageUrls),
+      hdImageUrls: this.normalizePublicImageUrls(detail.hdImageUrls),
       purchaseLimit: Number(detail.purchaseLimit || 0),
       specs: firstSku?.specs || [],
       skus,
@@ -247,7 +256,7 @@ export class ProductService {
           String(sku.code || `${productId}-${index + 1}`).trim(),
           JSON.stringify(attributeValueIds),
           JSON.stringify(specs),
-          String(sku.imageUrl || '').trim() || null,
+          toStoredUploadValue(sku.imageUrl || '', 'product-images') || null,
           Math.max(0, Number(sku.price || 0)),
           Math.max(0, Number(sku.originPrice ?? sku.price ?? 0)),
           Math.max(0, Number(sku.stock || 0)),
@@ -318,8 +327,8 @@ export class ProductService {
       if (user.role !== 'admin' && Number(existing[0].shop_id || 0) !== Number(shop.id)) throw new UnauthorizedException('只能保存自己店铺的商品');
     }
 
-    const imageUrls = this.normalizeImageUrls(Array.isArray(body.imageUrls) ? body.imageUrls : body.imageUrl ? [body.imageUrl] : []);
-    const hdImageUrls = this.normalizeImageUrls(body.hdImageUrls);
+    const imageUrls = this.normalizeStoredImageUrls(Array.isArray(body.imageUrls) ? body.imageUrls : body.imageUrl ? [body.imageUrl] : []);
+    const hdImageUrls = this.normalizeStoredImageUrls(body.hdImageUrls);
     const skuPayloads = this.normalizeSkus({ ...body, imageUrls });
     const skuPrices = skuPayloads.map((sku) => Math.max(0, Number(sku.price ?? body.price ?? body.originPrice ?? 0)));
     const totalStock = skuPayloads.reduce((sum, sku) => sum + Math.max(0, Number(sku.stock || 0)), 0);

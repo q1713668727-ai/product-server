@@ -3,6 +3,7 @@ import * as bcrypt from 'bcryptjs';
 import { ResultSetHeader } from 'mysql2';
 import { randomBytes } from 'node:crypto';
 import { DatabaseService } from '../database/database.service';
+import { toStoredUploadValue, toUploadPublicUrl } from '../common/upload-path.util';
 
 type AdminRole = 'admin' | 'merchant';
 
@@ -70,7 +71,7 @@ export class AuthService {
       role: row.role,
       shopId: row.shop_id,
       shopName: row.shop_name || '',
-      shopAvatarUrl: row.shop_avatar_url || '',
+      shopAvatarUrl: toUploadPublicUrl(row.shop_avatar_url || '', 'shop-avatars'),
       shopDescription: row.shop_description || '',
       status: row.status,
       permissions: this.parsePermissions(row),
@@ -162,11 +163,12 @@ export class AuthService {
     if (user.role !== 'merchant') throw new UnauthorizedException('只有普通商家可以维护店铺资料');
 
     const shopName = String(body.shopName || '').trim();
-    const shopAvatarUrl = String(body.shopAvatarUrl || '').trim();
+    const rawShopAvatarUrl = String(body.shopAvatarUrl || '').trim();
+    const shopAvatarUrl = toStoredUploadValue(rawShopAvatarUrl, 'shop-avatars');
     const shopDescription = String(body.shopDescription || '').trim();
     if (!shopName) throw new BadRequestException('店铺名称不能为空');
     if (shopName.length > 120) throw new BadRequestException('店铺名称不能超过 120 个字符');
-    if (shopAvatarUrl.length > 500) throw new BadRequestException('店铺头像地址不能超过 500 个字符');
+    if (rawShopAvatarUrl.length > 500) throw new BadRequestException('店铺头像地址不能超过 500 个字符');
     if (shopDescription.length > 500) throw new BadRequestException('店铺简介不能超过 500 个字符');
 
     await this.db.execute(

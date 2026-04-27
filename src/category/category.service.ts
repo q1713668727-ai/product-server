@@ -1,8 +1,9 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { ResultSetHeader } from 'mysql2';
 import { existsSync, unlinkSync } from 'node:fs';
-import { basename, join, normalize } from 'node:path';
+import { join, normalize } from 'node:path';
 import { AuthService } from '../auth/auth.service';
+import { extractUploadFilename, toStoredUploadValue, toUploadPublicUrl } from '../common/upload-path.util';
 import { DatabaseService } from '../database/database.service';
 
 type CategoryRow = {
@@ -40,8 +41,7 @@ export class CategoryService {
     for (const url of urls) {
       const raw = String(url || '').trim();
       if (!raw) continue;
-      const match = raw.match(/\/uploads\/category-icons\/([^/?#]+)/);
-      const filename = match?.[1] || basename(raw.split('?')[0].split('#')[0]);
+      const filename = extractUploadFilename(raw, 'category-icons');
       if (!filename) continue;
       const filePath = normalize(join(uploadRoot, decodeURIComponent(filename)));
       if (!filePath.startsWith(uploadRoot)) continue;
@@ -58,7 +58,7 @@ export class CategoryService {
       id: row.id,
       key: row.category_key,
       name: row.name,
-      iconUrl: row.icon_url || '',
+      iconUrl: toUploadPublicUrl(row.icon_url || '', 'category-icons'),
       parentId: row.parent_id,
       parentKey: row.parent_key || '',
       level: row.level,
@@ -201,7 +201,7 @@ export class CategoryService {
     if (level === 2) await this.ensureSecondLevelLimit(parentId, id);
     if (name === '推荐') throw new BadRequestException('类目名称不能叫做推荐');
     await this.ensureSiblingNameAvailable(parentId, name, id);
-    const iconUrl = level === 2 ? inputIconUrl : '';
+    const iconUrl = level === 2 ? toStoredUploadValue(inputIconUrl, 'category-icons') : '';
 
     if (id > 0) {
       const currentRows = await this.db.query<any>('SELECT level FROM market_categories WHERE id = ? AND deleted_at IS NULL LIMIT 1;', [id]);
